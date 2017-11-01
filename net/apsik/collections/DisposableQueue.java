@@ -13,17 +13,21 @@ import java.util.Iterator;
  * <p>The main reason to create this queue is storage huge amounts of data
  * whose have to be handled, but after that, they don't longer needed.</p>
  *
- * @author Dariusz Madeja
- * @version 1.0
+ * @author Dariusz (TheApsik) Madeja
+ * @version 1.1
  * @since 1.8
  * @param <E> Type of elements held in this queue
  */
-
 public class DisposableQueue<E> extends AbstractQueue<E> implements Runnable{
 
-    private Node<E> headNode; //This node is next node whose will be return.
-    private Node<E> newNode; //This node is last node whose was added.
-    private int size = 0; // How many items are contain.
+    private Node<E> headNode;   // This node contain next item whose will be return.
+    private Node<E> newNode;    // This node contain last item node whose was added.
+    private int size = 0;       // How many items are contain.
+
+    private Node<E> emptyNodeFirst;   // This node is first node from empty nodes queue.
+    private Node<E> emptyNodeLast; // This node is last node from empty nodes queue
+    private int sizeEmptyNodes = 0;
+    private int minSize = 0;    // This value represent how many nodes should be hold in queue (more = faster [Huge queue]).
 
     /**
      * <p>maxSize call how many items can be allocate in queue.</p>
@@ -35,39 +39,99 @@ public class DisposableQueue<E> extends AbstractQueue<E> implements Runnable{
     public DisposableQueue(){
         maxSize = 0;
     }
+
+    /**
+     * @param maxSize The maximum size queue.
+     */
     public DisposableQueue(int maxSize){
-        this.maxSize = maxSize;
+        this.maxSize = Math.max(0, maxSize);
     }
 
+    /**
+     * @param maxSize The maximum size queue.
+     * @param minSize The minimal size queue.
+     */
+    public DisposableQueue(int maxSize, int minSize){
+        this.maxSize = Math.max(0, maxSize);
+        this.minSize = Math.max(0, minSize);
+    }
+
+    // Methods
+    private void removeEmptyNode(){
+        //System.out.print(sizeEmptyNodes);
+        emptyNodeFirst = emptyNodeFirst.nextNode;
+        --sizeEmptyNodes;
+    }
+    private Node<E> getEmptyNode(){
+        Node<E> node = emptyNodeFirst;
+        removeEmptyNode();
+        node.nextNode = null;
+        return node;
+    }
+
+    private Node<E> getEmptyNodeWithIndex(int index){
+        Node <E> emptyNode = emptyNodeFirst;
+        for(int i = 1; i<index; ++i)
+            emptyNode = emptyNode.nextNode;
+        return emptyNode;
+    }
+
+    private Node<E> createNode(E e){
+        return sizeEmptyNodes > 0 ? getEmptyNode().setElement(e): new Node<>(e);
+    }
 
     private void setNode(E e){
         if(headNode != null) {
             if (headNode.nextNode != null)
-                newNode = newNode.nextNode = new Node<>(e);
+                newNode = newNode.nextNode = createNode(e);
             else
-                headNode.nextNode = newNode = newNode.nextNode = new Node<>(e);
+                newNode = newNode.nextNode = createNode(e);
         }else
-             headNode = newNode = new Node<>(e);
+             headNode = newNode = createNode(e);
 
         ++size;
     }
 
-    private Node<E> getNode(){
-        Node<E> node = headNode;
-        removeNode();
-        return node;
+    private void setEmptyNode(Node<E> node){
+        node.element = null;
+        node.nextNode = null;
+
+        if(emptyNodeFirst != null) {
+            if (emptyNodeFirst.nextNode != null)
+                emptyNodeLast = emptyNodeLast.nextNode = node;
+            else
+                emptyNodeLast = emptyNodeLast.nextNode = node;
+        }else
+            emptyNodeFirst = emptyNodeLast = node;
+
+        ++sizeEmptyNodes;
     }
 
     private void removeNode(){
         if(headNode == null)
             return;
 
+        Node<E> node = headNode;
+
+        //Removing
         if(headNode.nextNode == null)
             headNode = newNode = null;
         else
             headNode = headNode.nextNode;
 
+        //Controlling size of empty nodes
+        if(sizeEmptyNodes < minSize || sizeEmptyNodes < size/2)
+            setEmptyNode(node);
+
         --size;
+    }
+
+    public void setMinSize(int minSize){
+        this.minSize = minSize;
+    }
+
+    public int getMinSize(){
+        return this.minSize;
     }
 
     // Hmm... should I let you implement interface Runnable user? In your subclass?
@@ -98,6 +162,8 @@ public class DisposableQueue<E> extends AbstractQueue<E> implements Runnable{
 
     @Override
     public boolean offer(@NotNull E e) {
+        if(e == null)
+            throw new NullPointerException();
         if(maxSize != 0 && size >= maxSize)
             return false;
 
@@ -110,8 +176,9 @@ public class DisposableQueue<E> extends AbstractQueue<E> implements Runnable{
      */
     @Override
     public E poll() {
-        Node<E> node = getNode();
-        return node == null ? null : node.element;
+        E element = headNode == null ? null : headNode.element;
+        removeNode();
+        return element;
     }
 
     /**
@@ -124,6 +191,24 @@ public class DisposableQueue<E> extends AbstractQueue<E> implements Runnable{
 
     @Override
     public void clear(){
+        while(size > 0 && minSize > sizeEmptyNodes){
+            removeNode();
+            //System.out.print("TU");
+        }
+
+        if(minSize > 0) {
+            if(minSize < sizeEmptyNodes) {
+                Node<E> emptyNode = getEmptyNodeWithIndex(minSize);
+                emptyNode.nextNode = null;
+                emptyNodeLast = emptyNode;
+                sizeEmptyNodes = minSize;
+            }
+        }
+        else {
+            emptyNodeFirst = emptyNodeLast = null;
+            sizeEmptyNodes = 0;
+        }
+
         newNode = headNode = null;
         size = 0;
     }
@@ -170,6 +255,11 @@ public class DisposableQueue<E> extends AbstractQueue<E> implements Runnable{
 
         Node(T element){
             this.element = element;
+        }
+
+        Node<T> setElement(T t){
+            element = t;
+            return this;
         }
 
     }
